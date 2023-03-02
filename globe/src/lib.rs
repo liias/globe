@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+use std::cmp;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::Read;
@@ -41,6 +42,7 @@ impl Texture {
 /// Canvas that will be used to render the globe onto.
 pub struct Canvas {
     pub matrix: Vec<Vec<char>>,
+    pub color_matrix: Vec<Vec<Color>>,
     size: (usize, usize),
     // character size
     pub char_pix: (usize, usize),
@@ -52,10 +54,12 @@ impl Canvas {
         let y = y as usize;
 
         let matrix = vec![vec![' '; x]; y];
+        let color_matrix = vec![vec![Color::Default; x]; y];
 
         Self {
             size: (x, y),
             matrix,
+            color_matrix,
             char_pix: cp.unwrap_or((4, 8)),
         }
     }
@@ -66,12 +70,16 @@ impl Canvas {
         for i in self.matrix.iter_mut().flatten() {
             *i = ' ';
         }
+        for i in self.color_matrix.iter_mut().flatten() {
+            *i = Color::Default;
+        }
     }
-    fn draw_point(&mut self, a: usize, b: usize, c: char) {
+    fn draw_point(&mut self, a: usize, b: usize, c: char, color: Color) {
         if a >= self.size.0 || b >= self.size.1 {
             return;
         }
         self.matrix[b][a] = c;
+        self.color_matrix[b][a] = color;
     }
 }
 
@@ -82,6 +90,13 @@ pub struct Globe {
     pub angle: Float,
     pub texture: Texture,
     pub display_night: bool,
+    pub highlighted_areas: Vec<HighlightedArea>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HighlightedArea {
+    pub color: Color,
+    pub coords: [f32; 2],
 }
 
 impl Globe {
@@ -151,6 +166,28 @@ impl Globe {
                 let earth_x = (theta * tex_x as Float) as usize;
                 let earth_y = (phi * tex_y as Float) as usize;
 
+                let mut color = Color::Default;
+
+                for highlighted_area in &self.highlighted_areas {
+                    let lat = highlighted_area.coords[0];
+                    let lng = highlighted_area.coords[1];
+                    let p_phi = deg_to_rad(lat);
+                    let p_theta = deg_to_rad(lng);
+                    let p_x = (p_theta * tex_x as Float) as usize;
+                    let p_y = (p_phi * tex_y as Float) as usize;
+
+                    let x1 = p_x.saturating_sub(2);
+                    let y1 = p_y.saturating_sub(2);
+                    let x2 = p_x.saturating_add(2);
+                    let y2 = p_y.saturating_add(2);
+
+                    if earth_x > x1 && earth_x < x2 {
+                        if earth_y > y1 && earth_y < y2 {
+                            color = highlighted_area.color.clone()
+                        }
+                    }
+                }
+
                 // if night texture and palette are available, draw the night side
                 if self.display_night
                     && self.texture.night.is_some()
@@ -168,15 +205,37 @@ impl Globe {
                     if index >= palette.len() {
                         index = 0;
                     }
-                    canvas.draw_point(xi, yi, palette[index]);
+                    canvas.draw_point(xi, yi, palette[index], Color::Default);
                 }
                 // else just draw the day texture without considering luminance
                 else {
-                    canvas.draw_point(xi, yi, self.texture.day[earth_y][earth_x]);
+                    let letter = self.texture.day[earth_y][earth_x];
+                    canvas.draw_point(xi, yi, letter, color);
                 }
             }
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum Color {
+    Default,
+    Black,
+    DarkGrey,
+    Red,
+    DarkRed,
+    Green,
+    DarkGreen,
+    Yellow,
+    DarkYellow,
+    Blue,
+    DarkBlue,
+    Magenta,
+    DarkMagenta,
+    Cyan,
+    DarkCyan,
+    White,
+    Grey,
 }
 
 /// Globe configuration struct implementing the builder pattern.
@@ -188,6 +247,7 @@ pub struct GlobeConfig {
     template: Option<GlobeTemplate>,
     texture: Option<Texture>,
     display_night: bool,
+    highlighted_areas: Vec<HighlightedArea>,
 }
 
 impl GlobeConfig {
@@ -262,6 +322,12 @@ impl GlobeConfig {
         self
     }
 
+    /// Sets the highlighted areas
+    pub fn highlighted_areas(mut self, highlighted_areas: Vec<HighlightedArea>) -> Self {
+        self.highlighted_areas = highlighted_areas;
+        self
+    }
+
     /// Builds new `Globe` from the collected configuration settings.
     pub fn build(mut self) -> Globe {
         if let Some(template) = &self.template {
@@ -288,8 +354,13 @@ impl GlobeConfig {
             angle: self.angle.unwrap_or(0.),
             texture,
             display_night: self.display_night,
+            highlighted_areas: self.highlighted_areas,
         }
     }
+}
+
+fn deg_to_rad(deg: f32) -> f32 {
+    deg * (PI / 180.0)
 }
 
 /// Built-in globe template enumeration.
