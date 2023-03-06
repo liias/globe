@@ -171,20 +171,17 @@ impl Globe {
                 for highlighted_area in &self.highlighted_areas {
                     let lat = highlighted_area.coords[0];
                     let lng = highlighted_area.coords[1];
-                    let p_phi = deg_to_rad(lat);
-                    let p_theta = deg_to_rad(lng);
-                    let p_x = (p_theta * tex_x as Float) as usize;
-                    let p_y = (p_phi * tex_y as Float) as usize;
+                    let ratio_lat = ((lat - 90.) as f32).abs() / 180.;
 
-                    let x1 = p_x.saturating_sub(2);
-                    let y1 = p_y.saturating_sub(2);
-                    let x2 = p_x.saturating_add(2);
-                    let y2 = p_y.saturating_add(2);
+                    let ratio_lng = ((lng - 90.) as f32).abs() / 180.;
+                    let ratio_lng = 1. - ratio_lng;
 
-                    if earth_x > x1 && earth_x < x2 {
-                        if earth_y > y1 && earth_y < y2 {
-                            color = highlighted_area.color.clone()
-                        }
+                    // TODO: fix ratio_lng
+                    //let ratio_lng = 0.42;
+
+                    if (phi - ratio_lat).abs() <= 0.01
+                        && (theta - ratio_lng).abs() <= 0.01 {
+                        color = Color::Red
                     }
                 }
 
